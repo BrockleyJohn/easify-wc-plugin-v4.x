@@ -2,73 +2,76 @@
 
 include_once(dirname(__FILE__) . '/easify_functions.php');
 include_once(dirname(__FILE__) . '/class-easify-generic-shop.php');
+include_once(dirname(__FILE__) . '/class-easify-osc-server.php');
 
 /**
- * Provides a means for the Easify Web Service to manipulate a WooCommerce
+ * Provides a means for the Easify Web Service to manipulate an osCommerce
  * shopping system.
  * 
  * Implements abstract methods from the Easify_Generic_Shop superclass as 
  * required for use by the Easify_Generic_Web_Service class.
- */
-class Easify_WC_Shop extends Easify_Generic_Shop {
 
-    /**
+  Specialisation for osC of generic classes created by Easify 
+	
+	based on woocommerce plugin specialisation by Easify
+
+  Author John Ferguson (@BrockleyJohn) john@sewebsites.net
+  
+	copyright  (c) 2017 SEwebsites
+ */
+class Easify_osC_Shop extends Easify_Generic_Shop {
+
+    private $Product;
+		/**
      * Public implementation of abstract methods in superclass
      */
     
+    public function __construct($easify_server_url, $username, $password) {
+        // Create an Easify Server class so that the subclasses can communicate with the 
+        // Easify Server to retrieve product details etc....
+        $this->easify_server = new Easify_Osc_Easify_Server($easify_server_url, $username, $password);
+    }
+    
     public function IsExistingProduct($SKU) {
         try {
-            // get number of WooCommerce products that match the Easify SKU
-            global $wpdb;
-            $ProductId = $wpdb->get_var($wpdb->prepare(
-                            "SELECT post_id FROM " . $wpdb->postmeta . " WHERE meta_key = '_sku' AND meta_value = '%s' LIMIT 1", $SKU
-            ));
-            return is_numeric($ProductId) ? true : false;
+						// get number of OSCOM products that match the Easify SKU
+						$ProductResult = self::Query("SELECT COUNT(*) AS count FROM ".TABLE_PRODUCTS." WHERE easify_sku = '" . self::Sanitise($SKU) . "' ");
+						return ($ProductResult['count'] > 0 ? true : false);
         } catch (Exception $e) {
             Easify_Logging::Log("IsExistingProduct Exception: " . $e->getMessage() . "\n");
         }
     }
 
     public function InsertProduct($EasifySku) {
+	  //jaf create both mapping table entry and skeleton oscom product entry - attached to appropriate category
         try {
 
             // Get product from Easify Server
-            $Product = $this->easify_server->GetProductFromEasify($EasifySku);
+            $this->Product = $this->easify_server->GetProductFromEasify($EasifySku);
 
-            if ($Product->Published == 'false') {
+            if ($this->Product->Published == 'false') {
                 Easify_Logging::Log('Not published, deleting trace of product and skipping insert');
                 $this->DeleteProduct($EasifySku);
                 return;
             }
 
-            // calculate price from retail margin and cost price
-            $Price = round(($Product->CostPrice / (100 - $Product->RetailMargin) * 100), 4);
-
+            // calculate prices from retail margin and cost price
+						$DecimalPlaces = 4;
+						$this->ProductPrice = round(($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120), $DecimalPlaces);
+						$PriceExVAT = round((($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120)/1.2), $DecimalPlaces);
+				
             // catch reserved delivery SKUs and update delivery prices
-            if ($this->UpdateDeliveryPrice($Product->SKU, $Price))
+            if ($this->UpdateDeliveryPrice($this->Product->SKU, $this->ProductPrice))
                 return;
 
             // sanitise weight value
-            $Product->Weight = (isset($Product->Weight) && is_numeric($Product->Weight) ? $Product->Weight : 0);
+            $this->Product->Weight = (isset($this->Product->Weight) && is_numeric($this->Product->Weight) ? $this->Product->Weight : 0);
 
-            // get Easify product categories
-            $EasifyCategories = $this->easify_server->GetEasifyProductCategories();
-
-            // get Easify category description by the Easify category id
-            $CategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifyCategories, $Product->CategoryId);
-
-            // get Easify product sub categories by Easify category id
-            $EasifySubCategories = $this->easify_server->GetEasifyProductSubCategoriesByCategory($Product->CategoryId);
-
-            // get Easify sub category description by Easify sub category id
-            $SubCategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifySubCategories, $Product->SubcategoryId);
-
-            //Easify_Logging::Log("..Subcategory: " . $SubCategoryDescription . "..");
-            // insert new category if needed and return WooCommerce category id
-            $CategoryId = $this->InsertCategoryIntoWooCommerce($CategoryDescription, $CategoryDescription);
-
-            // insert new sub category if needed and return WooCommerce sub category id
-            $SubCategoryId = $this->InsertSubCategoryIntoWooCommerce($SubCategoryDescription, $SubCategoryDescription, $CategoryId);
+            // jaf move out category handling to osc specific functions
+						
+						$OscCategoryId = $this->GetOscCategory($this->Product->CategoryId, $this->Product->SubcategoryId);
+						
+		        $ManufacturerId = $this->GetOscManufacturerId($this->Product->ManufacturerId); 
 
             // create a WooCommerce stub for the new product
             $ProductStub = array(
@@ -258,10 +261,16 @@ class Easify_WC_Shop extends Easify_Generic_Shop {
     }
 
     public function DeleteProduct($ProductSKU) {
-        // get the WooCommerce product id by the Easify SKU
-        $ProductId = $this->GetWooCommerceProductIdFromEasifySKU($ProductSKU);
-        wp_delete_post($ProductId, true);
-    }
+			//jaf - default - just flag the easify record as deleted and leave osc alone...
+		  if ((! defined('EASIFY_EDIT_MASTER')) || EASIFY_EDIT_MASTER == 'false') {
+				Easify_Logging::Log('Flag product with SKU '.$ProductSKU." as deleted\n");
+		
+				self::Query("UPDATE ".TABLE_EASIFY_PRODUCTS." SET
+					`easify_discontinued` = 1 
+					 WHERE `easify_sku` ='".self::Sanitise($ProductSKU)."'");
+			} else {
+			}
+		}
 
     public function UpdateProductInfo($EasifySku) {
         try {
@@ -398,9 +407,49 @@ class Easify_WC_Shop extends Easify_Generic_Shop {
     
     
     /**
-     * Private methods specific to WooCommerce shop
+     * Private methods specific to osCommerce shop
      */    
-      
+
+    private function GetOscCategory($CategoryId, $SubcategoryId) {
+
+						/* jaf - restructure and optimise:
+						  check if required Easify categories present in osC
+							if not, refresh Easify categories
+							get osC category id for insert
+						*/
+						
+						// check which catgory to use
+						if (EASIFY_USE_ONLY_FLAT_SUBCATEGORIES == 'true') {
+						  $OscCategoryId = $this->GetOscCategoryIdFromEasifyCategoryId($CategoryId);
+						} else {
+						  $OscCategoryId = $this->GetOscCategoryIdFromEasifyCategoryId($SubcategoryId);
+						}
+						
+						if ($OscCategoryId) return $OscCategoryId;
+						
+						// the Easify category isn't here so refresh them
+						$this->RefreshEasifyCategories();
+						// get Easify product categories
+            $EasifyCategories = $this->easify_server->GetEasifyProductCategories();
+
+            // get Easify category description by the Easify category id
+            $CategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifyCategories, $Product->CategoryId);
+
+            // get Easify product sub categories by Easify category id
+            $EasifySubCategories = $this->easify_server->GetEasifyProductSubCategoriesByCategory($Product->CategoryId);
+
+            // get Easify sub category description by Easify sub category id
+            $SubCategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifySubCategories, $Product->SubcategoryId);
+
+            //Easify_Logging::Log("..Subcategory: " . $SubCategoryDescription . "..");
+            // insert new category if needed and return WooCommerce category id
+            $CategoryId = $this->InsertCategoryIntoWooCommerce($CategoryDescription, $CategoryDescription);
+
+            // insert new sub category if needed and return WooCommerce sub category id
+            $SubCategoryId = $this->InsertSubCategoryIntoWooCommerce($SubCategoryDescription, $SubCategoryDescription, $CategoryId);
+
+    }
+		
     private function GetWooCommerceProductIdFromEasifySKU($SKU) {
         // get WooCommerce product id from Easify SKU
         global $wpdb;
@@ -656,6 +705,109 @@ class Easify_WC_Shop extends Easify_Generic_Shop {
             }
         }
     }
+
+	private function GetOscManufacturerId($ManufacturerId)
+	{ //jaf store mapping table and only get them when needed
+
+		// get any existing OSCOM manufacturers id
+		$OSCOMManufacturersId = null;
+		$ManufacturerResult = self::Query("SELECT * FROM ".TABLE_EASIFY_MANUFACTURERS." WHERE easify_manufacturer_id = '" . self::Sanitise($ManufacturerId) . "' LIMIT 0,1");
+		$OSCOMManufacturersId = isset($ManufacturerResult['manufacturers_id']) ? $ManufacturerResult['manufacturers_id'] : null;
+		$easify_manufacturer_description = isset($ManufacturerResult['easify_manufacturer_description']) ? $ManufacturerResult['easify_manufacturer_description'] : null;
+		
+		// if manufacturer doesn't exist in mapping table we refresh all the manufacturers in mapping table and decide what to do in osC
+		if (empty($OSCOMManufacturersId)) {
+			
+      Easify_Logging::Log("GetWooCommerceTaxIdByEasifyTaxId() - Start");
+			Easify_Logging::Log("GetOSCOMManufacturerId Easify Id: " . self::Sanitise($ManufacturerId).' not found in osC - refresh list of manufacturers from easify');
+		// get Easify manufacturers and update the mapping table entry for each
+			$Manufacturers = $this->easify_server->GetEasifyManufacturers();
+			Easify_Logging::Log(sizeof($Manufacturers).' manufacturers retrieved from easify');
+
+			for ($i = 0; $i < sizeof($Manufacturers); $i++) {
+				$ManId = null; 
+				$ManResult = self::Query("SELECT manufacturers_id, COUNT(easify_manufacturer_id) AS total FROM ".TABLE_EASIFY_MANUFACTURERS." WHERE easify_manufacturer_id = '" . self::Sanitise($Manufacturers[$i]->Id) . "' LIMIT 0,1");
+				$ManId = isset($ManResult['manufacturers_id']) ? $ManResult['manufacturers_id'] : null;
+				if (empty($ManId)) { // not mapped so insert osc manufacturer if set, and mapping table entry if required
+					switch (EASIFY_MANUFACTURER_MODE) {
+						case 'match' :
+						case 'create' :
+							$ManOscResult = self::Query("SELECT * FROM ".TABLE_MANUFACTURERS." WHERE manufacturers_name = '" . self::Sanitise($Manufacturers[$i]->Description) . "' LIMIT 0,1");
+							$oscManufacturersId = isset($ManOscResult['manufacturers_id']) ? $ManOscResult['manufacturers_id'] : null;
+							if (EASIFY_MANUFACTURER_MODE == 'create') {
+								// insert new manufacturer into OSCOM 
+								self::Query("INSERT INTO ".TABLE_MANUFACTURERS." (manufacturers_name, date_added, last_modified) VALUES ('" . self::Sanitise($Manufacturers[$i]->Description) . "', now(), now())");
+								// get the new OSCOM manufacturers id
+								$NewManufacturerResult = self::Query("SELECT manufacturers_id FROM manufacturers WHERE manufacturers_name = '" . self::Sanitise($Manufacturers[$i]->Description) . "' LIMIT 0,1");
+								$oscManufacturersId = $NewManufacturerResult['manufacturers_id'];
+								// finish by inserting meta data about the new manufacturer into OSCOM
+								self::Query("INSERT INTO ".TABLE_MANUFACTURERS_INFO." (manufacturers_id, languages_id, manufacturers_url, url_clicked) VALUES (" . self::Sanitise($oscManufacturersId) . ", 1, '', 0)");
+							}
+							break;
+						}
+						// finally inserting the mapping table entry if needed
+						if ($ManResult['total']==0) {
+							self::Query("INSERT INTO ".TABLE_EASIFY_MANUFACTURERS." (easify_manufacturer_id, easify_manufacturer_description, manufacturers_id) VALUES ('".self::Sanitise($Manufacturers[$i]->Id) . "', '".self::Sanitise($Manufacturers[$i]->Description). "', '".self::Sanitise($oscManufacturersId)."')");
+						}
+						if ($Manufacturers[$i]->Id == $ManufacturerId) $OSCOMManufacturersId = $oscManufacturersId;
+				} else { //update the description in case changed in Easify
+					self::Query("UPDATE ".TABLE_EASIFY_MANUFACTURERS." SET easify_manufacturer_description = '".self::Sanitise($Manufacturers[$i]->Description)."' WHERE easify_manufacturer_id='".self::Sanitise($Manufacturers[$i]->Id) . "'");
+				}
+			}
+		}
+		Easify_Logging::Log('returning manufacturer id \''.$OSCOMManufacturersId."'");
+		return $OSCOMManufacturersId;
+	}
+
+		private static function Query($SQL, $link = 'db_link')
+		{
+			global $$link;
+			$query_debug = false;
+			try {
+	/*			$link = mysqli_connect(DB_SERVER, DB_SERVER_USERNAME, DB_SERVER_PASSWORD, DB_DATABASE);
+				if (!$link) {
+					self::WriteLog("Query Exception: " . mysqli_error() . "\n");
+					return;
+				} */
+					
+			//	mysqli_select_db(DB_DATABASE, $link);
+				$result = mysqli_query($$link, $SQL);
+				if (!$result) {
+					self::HandleException("Query Exception: " . mysqli_error($$link) . "\n");
+					return;
+				}
+				if (!(is_object($result) && $result instanceof mysqli_result) && $result == 1) return array();
+				
+				if ($query_debug)	Easify_Logging::Log("Select query SQL: " . $SQL . "\n");
+	
+				$return = array();
+				if (mysqli_num_rows($result) > 0)
+					while ($row = mysqli_fetch_array($result, MYSQL_ASSOC)) {
+						$return[] = $row;
+						if ($query_debug)	{
+							ob_start(); var_dump($row); $dump = ob_get_contents(); ob_end_clean();
+							Easify_Logging::Log("row: " . $dump . "\n");
+						}
+					}
+				mysqli_free_result($result);
+				
+				if (!isset($return)) return array();
+				return sizeof($return) == 1 ? $return[0] : $return;
+			} catch (Exception $e) {
+				Easify_Logging::Log("Query Exception: " . $e->getMessage() . "\n");
+			}
+		}
+		
+		private static function Sanitise($string, $link = 'db_link') {
+			global $$link;
+			if ( function_exists('mysqli_real_escape_string') ) {
+				return mysqli_real_escape_string($$link,$string);
+			} elseif ( function_exists('mysql_escape_string') ) {
+				return mysql_escape_string($string);
+			} else {
+				return addslashes($string);
+			}
+		}
 
 }
 
