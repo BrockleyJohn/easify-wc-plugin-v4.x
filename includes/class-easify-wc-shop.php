@@ -21,6 +21,15 @@ include_once(dirname(__FILE__) . '/class-easify-generic-shop.php');
 include_once(dirname(__FILE__) . '/class-easify-osc-server.php');
 
 /**
+-
+  Specialisation for osC of generic classes created by Easify 
+	
+	based on woocommerce plugin specialisation by Easify
+
+  Author John Ferguson (@BrockleyJohn) john@sewebsites.net
+  
+	copyright  (c) 2017 SEwebsites
+
  * Provides a means for the Easify Web Service to manipulate an osCommerce
  * shopping system.
  * 
@@ -33,6 +42,12 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
 		/**
      * Public implementation of abstract methods in superclass
      */
+    
+    public function __construct($easify_server_url, $username, $password) {
+        // Create an Easify Server class so that the subclasses can communicate with the 
+        // Easify Server to retrieve product details etc....
+        $this->easify_server = new Easify_Osc_Easify_Server($easify_server_url, $username, $password);
+    }
     
     public function IsExistingProduct($SKU) {
         try {
@@ -69,8 +84,11 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 return;
             }
 
-            // calculate price from retail margin and cost price
-            $Price = round(($this->Product->CostPrice / (100 - $Product->RetailMargin) * 100), 4);
+            // calculate prices from retail margin and cost price
+						$DecimalPlaces = 4;
+						$ProductPrice = round(($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120), $DecimalPlaces);
+						$PriceExVAT = round((($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120)/1.2), $DecimalPlaces);
+                 
 
             // catch reserved delivery SKUs and update delivery prices
             if ($this->UpdateDeliveryPrice($this->Product->SKU, $this->ProductPrice))
@@ -85,7 +103,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
 						
 		        $ManufacturerId = $this->GetOscManufacturerId($this->Product->ManufacturerId); 
 
-            // create a WooCommerce stub for the new product
+            // jaf to here
+						// create a WooCommerce stub for the new product
             $ProductStub = array(
                 'post_title' => $Product->Description,
                 'post_content' => '',
