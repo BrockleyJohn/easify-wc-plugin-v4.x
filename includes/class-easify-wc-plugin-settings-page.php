@@ -1,9 +1,37 @@
 <?php
+/**
+ * Copyright (C) 2017  Easify Ltd (email:support@easify.co.uk)
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
 require_once ( plugin_dir_path(__FILE__) . '/easify_functions.php' );
 require_once ( 'class-easify-generic-easify-server.php' );
 require_once ( 'class-easify-generic-easify-server-discovery.php' );
 require_once ( 'class-easify-wc-easify-options.php' );
 
+/**
+ * This class represents the Easify WooCommerce Plugin Settings page in 
+ * WordPress.
+ * 
+ * It handles creating the various settings pages, as well as dealing with 
+ * updates to the settings and validation.
+ * 
+ * @class       Easify_WC__Plugin_Settings_Page
+ * @version     4.0
+ * @package     easify-woocommerce-connector
+ * @author      Easify 
+ */
 class Easify_WC__Plugin_Settings_Page {
 
     private $options; // Easify settings stored in the WordPress database
@@ -126,8 +154,7 @@ class Easify_WC__Plugin_Settings_Page {
     /**
      * create Easify options page tabs
      */
-    private function create_easify_options_tabs($current = 'setup') {
-
+    private function create_easify_options_tabs($current = 'setup') {       
         // a list of the Easify option pages 
         $tabs = array(
             'setup' => 'Credentials',
@@ -139,15 +166,19 @@ class Easify_WC__Plugin_Settings_Page {
             'logging' => 'Logging'
         );
 
-        // Warn user if no shipping options have been configured...
-        if (!$this->easify_options->are_shipping_skus_present()) {
-            $this->display_shipping_options_warning();
+        // Only display configuration warnings once Easify Server is reachable...
+        if ($this->isEasifyServerReachable) {
+            // Warn user if no shipping options have been configured...
+            if (!$this->easify_options->are_shipping_skus_present()) {
+                $this->display_shipping_options_warning();
+            }
+
+            // Warn user if no coupon options have been configured...
+            if (!$this->easify_options->is_discount_sku_present()) {
+                $this->display_coupons_options_warning();
+            }
         }
 
-        // Warn user if no coupon options have been configured...
-        if (!$this->easify_options->is_discount_sku_present()) {
-            $this->display_coupons_options_warning();
-        }
 
         // Easify icon and start tab wrapper
         ?>        
@@ -178,6 +209,14 @@ class Easify_WC__Plugin_Settings_Page {
                         } else {
                             echo "<a class='nav-tab$class' href='?page=easify_options_page&tab=$tab'>$name</a>";
                         }
+                    } elseif  (strtolower($name) == 'coupons') {
+                        // For coupons tab - display warning if coupon options not set...
+                        if (!$this->easify_options->is_discount_sku_present()) {
+                            echo "<a class='nav-tab$class' href='?page=easify_options_page&tab=$tab'>$name&nbsp;<img src='"
+                            . plugin_dir_url(__FILE__) . "../assets/images/warning.png' title='Coupon options not configured!'/></a>";
+                        } else {
+                            echo "<a class='nav-tab$class' href='?page=easify_options_page&tab=$tab'>$name</a>";
+                        }                        
                     } else {
                         echo "<a class='nav-tab$class' href='?page=easify_options_page&tab=$tab'>$name</a>";
                     }
@@ -233,14 +272,17 @@ class Easify_WC__Plugin_Settings_Page {
             // options...
             $this->easify_options = new Easify_WC_Easify_Options();
 
-            // Prepare Easify Server class so we can talk to Easify Server...
-            $this->easify_server = new Easify_Generic_Easify_Server(
-                    get_option('easify_web_service_location'), $this->options['easify_username'], $this->options['easify_password']);
 
+            // If we have a username and password set, initialise easify server classes
+            if ($this->options['easify_username'] && $this->options['easify_password']) {
+                // Prepare Easify Server class so we can talk to Easify Server...                
+                $this->easify_server = new Easify_Generic_Easify_Server(
+                        get_option('easify_web_service_location'), $this->options['easify_username'], $this->options['easify_password']);
 
-            // Prepare Easify Discovery Server for use...
-            $this->easify_discovery_server = new Easify_Generic_Easify_Server_Discovery(
-                    EASIFY_DISCOVERY_SERVER_ENDPOINT_URI, $this->options['easify_username'], $this->options['easify_password']);
+                // Prepare Easify Discovery Server for use...
+                $this->easify_discovery_server = new Easify_Generic_Easify_Server_Discovery(
+                        EASIFY_DISCOVERY_SERVER_ENDPOINT_URI, $this->options['easify_username'], $this->options['easify_password']);
+            }
 
 
             // Check to see if we have comms with Easify.
@@ -859,7 +901,7 @@ class Easify_WC__Plugin_Settings_Page {
                 );
 
                 $input['easify_discount_sku'] = '';
-                return $input;                
+                return $input;
             }
 
 
@@ -917,10 +959,10 @@ class Easify_WC__Plugin_Settings_Page {
                         Flat Rate (cost per order)
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_shipping_sku('flat_rate');
-        $this->tool_tip('shipping-flat-rate-tip');
-        ?>
+                        <?php
+                        $this->setting_html_easify_shipping_sku('flat_rate');
+                        $this->tool_tip('shipping-flat-rate-tip');
+                        ?>
                     </td>
                 </tr>
                 <tr>
@@ -928,10 +970,10 @@ class Easify_WC__Plugin_Settings_Page {
                         Free Shipping (minimum order amount)
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_shipping_sku('free_shipping');
-        $this->tool_tip('shipping-free-tip');
-        ?>
+                        <?php
+                        $this->setting_html_easify_shipping_sku('free_shipping');
+                        $this->tool_tip('shipping-free-tip');
+                        ?>
                     </td>
                 </tr>
                 <tr>
@@ -939,10 +981,10 @@ class Easify_WC__Plugin_Settings_Page {
                         International Delivery
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_shipping_sku('international_delivery');
-        $this->tool_tip('shipping-international-tip');
-        ?>
+                        <?php
+                        $this->setting_html_easify_shipping_sku('international_delivery');
+                        $this->tool_tip('shipping-international-tip');
+                        ?>
                     </td>
                 </tr>
                 <tr>
@@ -950,10 +992,10 @@ class Easify_WC__Plugin_Settings_Page {
                         Local Delivery (cost per order)
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_shipping_sku('local_delivery');
-        $this->tool_tip('shipping-local-delivery-tip');
-        ?>
+                        <?php
+                        $this->setting_html_easify_shipping_sku('local_delivery');
+                        $this->tool_tip('shipping-local-delivery-tip');
+                        ?>
                     </td>
                 </tr>
                 <tr>
@@ -961,10 +1003,10 @@ class Easify_WC__Plugin_Settings_Page {
                         Default
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_shipping_sku('default');
-        $this->tool_tip('shipping-default-tip');
-        ?>
+                        <?php
+                        $this->setting_html_easify_shipping_sku('default');
+                        $this->tool_tip('shipping-default-tip');
+                        ?>
                     </td>
                 </tr>
             </tbody>
@@ -1047,9 +1089,9 @@ class Easify_WC__Plugin_Settings_Page {
                         PayPal
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('paypal');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('paypal');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1068,9 +1110,9 @@ class Easify_WC__Plugin_Settings_Page {
                         SagePay
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('sagepayform');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('sagepayform');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1089,9 +1131,9 @@ class Easify_WC__Plugin_Settings_Page {
                         WorldPay
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('worldpay');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('worldpay');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1110,9 +1152,9 @@ class Easify_WC__Plugin_Settings_Page {
                         Cash on Delivery
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('cod');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('cod');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1131,9 +1173,9 @@ class Easify_WC__Plugin_Settings_Page {
                         Cheque Payment
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('cheque');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('cheque');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1152,9 +1194,9 @@ class Easify_WC__Plugin_Settings_Page {
                         Direct Bank Transfer
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('bacs');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('bacs');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1173,9 +1215,9 @@ class Easify_WC__Plugin_Settings_Page {
                         Default
                     </td>
                     <td>
-        <?php
-        $this->setting_html_easify_payment_method_id('default');
-        ?>
+                        <?php
+                        $this->setting_html_easify_payment_method_id('default');
+                        ?>
                     </td>
                     <td>
                         <?php
@@ -1312,6 +1354,8 @@ class Easify_WC__Plugin_Settings_Page {
         ?>
         <p>Enable Easify plugin diagnostic logging.</p>
         <p>The log file will be saved to: <?= plugin_dir_url(__FILE__) . 'logs/easify_log.txt' ?></p>  
+        <p class="easify-warning"><b>NOTE:</b> We recommend only enabling logging for troubleshooting problems, as the log file can 
+        very rapidly grow to take up a lot of disk space.</p>        
         <?php
     }
 
@@ -1436,7 +1480,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <h3>Enter Your Subscription Credentials</h3>
                 <p>You have not yet entered your Easify WooCommerce Plugin Subscription credentials.</p>
                 <p>Enter your Easify Subscription username and password below and click the <b>Save Changes</b> button.</p>
-                <a href="#">Click here for more info...</a>                    
+                <?= $this->tooltip_click_here_link('credentials') ?>                              
             </div>               
 
             <div id="status-easify-server-connection-failure-tip">
@@ -1445,7 +1489,9 @@ class Easify_WC__Plugin_Settings_Page {
                 <p>Make sure your Easify WooCommerce Plugin Subscription username and password are correct.</p>
                 <p>Make sure your Easify WooCommerce Plugin Subscription has not expired.</p>
                 <p>Check that your Easify Server is online and is accessible.</p>
-                <a href="#">Click here for more info...</a>                    
+                <a href="<?= EASIFY_HELP_BASE_URL . '/Help/ecommerce_woocommerce_plugin_troubleshooting' ?>" 
+                   target="_blank" 
+                   title ="Opens in a new tab..." >Click here for troubleshooting tips...</a>                                 
             </div>        
 
 
@@ -1454,13 +1500,13 @@ class Easify_WC__Plugin_Settings_Page {
                 <h3>Easify Subscription Username</h3>
                 <p>This is the username that you setup when you purchased your Easify WooCommerce Plugin Subscription.</p>
                 <p>It will be in the form of an email address i.e. MyWebsite@MyCompanyName.easify.co.uk.</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('credentials-username') ?>      
             </div>     
 
             <div id="credentials-easify-password-tip">
                 <h3>Easify Subscription Password</h3>
                 <p>This is the password that you setup when you purchased your Easify WooCommerce Plugin Subscription.</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('credentials-password') ?>                               
             </div>             
 
 
@@ -1469,7 +1515,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <h3>Easify Order Status</h3>
                 <p>When an order is placed via WooCommerce, it will be sent to your Easify Server with the Easify Order Status you specify here.</p>
                 <p>We recommend you set this value to <b>New Order</b> so that you know you have a new order to process in Easify.</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('orders-status') ?>                               
             </div>              
 
             <div id="orders-order-type-tip">
@@ -1478,14 +1524,14 @@ class Easify_WC__Plugin_Settings_Page {
                 <p>We recommend you set this value to <b>Internet</b> so that you know that the order came from the Internet in Easify.</p>
                 <p><b>Note: </b><i>If you have created your own Order Types in Easify, you can select one of those if you wish. For example you could create an 
                         Order type of <b>'WooCommerce'</b> in Easify and select that here so that you know the order came from your WooCommerce site.</i></p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('order-type') ?>                                     
             </div>                
 
             <div id="orders-order-comment-tip">
                 <h3>Easify Order Comment</h3>
                 <p>When an order is placed via WooCommerce, it will be sent to your Easify Server and the Easify order comment will be set to the value you specify here.</p>
                 <p>The WooCommerce Order Number will be automatically appended to the comment that you enter here.</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('order-comment') ?>                        
             </div>        
 
 
@@ -1495,7 +1541,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p>When an order is placed via WooCommerce, it will be sent to your Easify Server and the related 
                     Easify Customer will be given the Customer Type you specify here.</p>
                 <p>If you do not make use of customer types in Easify you can leave this as the default value (Not Known).</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('customer-type') ?>                                   
             </div>             
 
             <div id="customers-customer-relationship-tip">
@@ -1503,9 +1549,21 @@ class Easify_WC__Plugin_Settings_Page {
                 <p>When an order is placed via WooCommerce, it will be sent to your Easify Server and the related 
                     Easify Customer will be given the Customer Relationship you specify here.</p>
                 <p>We recommend you set this to <b>Active</b> unless you have created your own custom Customer Types in Easify.</p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('customer-relationship') ?>                
             </div>      
 
+            <!-- OPTIONS COUPONS -->
+            <div id="coupons-discount-sku-tip">
+                <h3>WooCommerce Coupons</h3>
+                <p>If you want to support WooCommerce coupons in Easify, create a product in Easify named (say) <b>Discount</b> and enter the 
+                    Easify SKU of it here.</p>
+                <p>When an order is placed via WooCommerce, any coupons that were applied to the WooCommerce order will be added to the order
+                    in your Easify Server as the product specified here.</p>     
+                <p>If you do not use WooCommerce coupons you can leave this field blank.</p>
+                <p>If you do use WooCommerce coupons and do not create a Discount product in Easify and enter its SKU here,
+                    any WooCommerce orders that have coupons applied will be sent to your Easify Server without a discount.</p>             
+                <?= $this->tooltip_click_here_link('coupons-discount-sku') ?>           
+            </div>   
 
             <!-- OPTIONS SHIPPING -->
             <div id="shipping-flat-rate-tip">
@@ -1519,7 +1577,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Note: </b>You don't have to create a separate Easify Product for each shipping method. If you prefer 
                     you can create one product in Easify for all of your WooCommerce shipping methods and use the same 
                     Easify SKU in each box here.</p>                
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('shipping-flat-rate') ?>               
             </div>            
 
             <div id="shipping-free-tip">
@@ -1531,7 +1589,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Note: </b>You don't have to create a separate Easify Product for each shipping method. If you prefer 
                     you can create one product in Easify for all of your WooCommerce shipping methods and use the same 
                     Easify SKU in each box here.</p>   
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('shipping-free') ?>                  
             </div>              
 
             <div id="shipping-international-tip">
@@ -1545,7 +1603,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Note: </b>You don't have to create a separate Easify Product for each shipping method. If you prefer 
                     you can create one product in Easify for all of your WooCommerce shipping methods and use the same 
                     Easify SKU in each box here.</p>   
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('shipping-international') ?>                 
             </div>             
 
             <div id="shipping-local-delivery-tip">
@@ -1559,7 +1617,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Note: </b>You don't have to create a separate Easify Product for each shipping method. If you prefer 
                     you can create one product in Easify for all of your WooCommerce shipping methods and use the same 
                     Easify SKU in each box here.</p>   
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('shipping-local') ?>                 
             </div>             
 
             <div id="shipping-default-tip">
@@ -1573,7 +1631,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Note: </b>You don't have to create a separate Easify Product for each shipping method. If you prefer 
                     you can create one product in Easify for all of your WooCommerce shipping methods and use the same 
                     Easify SKU in each box here.</p>   
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('shipping-default') ?>              
             </div>              
 
             <!-- OPTIONS PAYMENTS -->
@@ -1582,7 +1640,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p>When an order is placed via WooCommerce, it will be sent to your Easify Server and a payment record will be created 
                     in Easify.</p>
                 <p>Here you can enter the comment that will be added to the payment record in Easify.</p>                
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('payments-comment') ?>              
             </div>                        
 
             <div id="payment-mapping-paypal-tip">
@@ -1598,7 +1656,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via PayPal. <i>We recommend <b>enabling</b> PayPal payments to be sent to 
                         Easify as the payment will have been approved.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-paypal') ?>                 
             </div>             
 
             <div id="payment-mapping-sagepay-tip">
@@ -1614,7 +1672,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via SagePay. <i>We recommend <b>enabling</b> SagePay payments to be sent to 
                         Easify as the payment will have been approved.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-sagepay') ?>               
             </div>             
 
             <div id="payment-mapping-worldpay-tip">
@@ -1630,7 +1688,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via WorldPay. <i>We recommend <b>enabling</b> WorldPay payments to be sent to 
                         Easify as the payment will have been approved.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-worldpay') ?>                 
             </div>             
 
             <div id="payment-mapping-cod-tip">
@@ -1646,7 +1704,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via Cash on Delivery. <i>We recommend <b>disabling</b> Cash on Delivery payments from being sent to 
                         Easify as the payment will not have yet been received.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-cod') ?>                 
             </div>            
 
             <div id="payment-mapping-cheque-tip">
@@ -1662,7 +1720,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via Cheque. <i>We recommend <b>disabling</b> Cheque payments from being sent to 
                         Easify as the payment will not have yet been received.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-cheque') ?>                 
             </div>             
 
             <div id="payment-mapping-bacs-tip">
@@ -1678,7 +1736,7 @@ class Easify_WC__Plugin_Settings_Page {
                 <p><b>Enabled:</b> Tick this to enable payments to be recorded in Easify when a 
                     payment is received via Direct Bank Transfer. <i>We recommend <b>disabling</b> Direct Bank Transfer payments from being sent to 
                         Easify as the payment will not have yet been received.</i><p>                 
-                    <a href="#">Click here for more info...</a>               
+                    <?= $this->tooltip_click_here_link('payments-bacs') ?>                
             </div>              
 
             <div id="payment-mapping-default-tip">
@@ -1700,7 +1758,7 @@ class Easify_WC__Plugin_Settings_Page {
                         if the unknown payment method is an unrecognised credit card processor you could 
                         set the default payment mapping to use the Credit Card payment method, the Current payment
                         account and to be enabled.</i></p>
-                <a href="#">Click here for more info...</a>               
+                <?= $this->tooltip_click_here_link('payments-default') ?>                
             </div>  
 
 
@@ -1708,28 +1766,29 @@ class Easify_WC__Plugin_Settings_Page {
             <div id="logging-tip">
                 <h3>Easify Plugin Logging</h3>
                 <p>Here you can enable logging for the Easify WooCommerce Plugin.</p>
-                <p>When this option is enabled the Easify Plugin will record diagnostic logs to help you troubleshooted
+                <p>When this option is enabled the Easify Plugin will record diagnostic logs to help you troubleshoot
                     problems with your Easify WooCommerce integration.</p>
-                <p>The log file will be saved to: <?= plugin_dir_url(__FILE__) . 'logs/easify_log.txt' ?></p>                
-                <a href="#">Click here for more info...</a>               
+                <p>The log file will be saved to: <?= plugin_dir_url(__FILE__) . 'logs/easify_log.txt' ?></p>       
+                <p class="easify-warning"><b>NOTE:</b> We recommend only enabling logging for troubleshooting problems, as the log file can 
+                very rapidly grow to take up a lot of disk space.</p>
+                <?= $this->tooltip_click_here_link('logging-logging') ?>                
             </div> 
-
-            <!-- OPTIONS COUPONS -->
-            <div id="coupons-discount-sku-tip">
-                <h3>WooCommerce Coupons</h3>
-                <p>If you want to support WooCommerce coupons in Easify, create a product in Easify named (say) <b>Discount</b> and enter the 
-                    Easify SKU of it here.</p>
-                <p>When an order is placed via WooCommerce, any coupons that were applied to the WooCommerce order will be added to the order
-                    in your Easify Server as the product specified here.</p>     
-                <p>If you do not use WooCommerce coupons you can leave this field blank.</p>
-                <p>If you do use WooCommerce coupons and do not create a Discount product in Easify and enter its SKU here,
-                    any WooCommerce orders that have coupons applied will be sent to your Easify Server without a discount.</p>             
-                <a href="#">Click here for more info...</a>               
-            </div>             
 
 
 
         </div>
+        <?php
+    }
+
+    /**
+     * Renders a hyperlink to the specified url which will open a new tab with the 
+     * corresponding Easify help article.
+     * 
+     * id string $url The id of the part of the help page that the link should take you to
+     */
+    private function tooltip_click_here_link($id) {
+        ?>
+        <a href="<?= EASIFY_HELP_BASE_URL . '/Help/ecommerce_woocommerce_plugin_settings#' . $id ?>" target="_blank" title ="Opens in a new tab..." >Click here for more info...</a>  
         <?php
     }
 

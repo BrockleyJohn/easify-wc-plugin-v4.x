@@ -10,6 +10,7 @@
  * Requires at least: 4.0
  * Tested up to: 4.7.2
  */
+
 /**
  * Copyright (C) 2017  Easify Ltd (email:support@easify.co.uk)
  * This program is free software; you can redistribute it and/or
@@ -26,6 +27,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+
 // Exit if accessed directly
 if (!defined('ABSPATH')) {
     exit;
@@ -34,7 +36,8 @@ if (!defined('ABSPATH')) {
 // Logging can be enabled either in the Easify Plugin Options (via the database)
 // or in the easify-generic-constants.php file.
 if (!defined('EASIFY_LOGGING_BY_DB_FLAG')) {
-    define('EASIFY_LOGGING_BY_DB_FLAG', get_option('easify_options_logging'));
+   // $test = get_option('easify_options_logging')['easify_logging_enabled'];
+    define('EASIFY_LOGGING_BY_DB_FLAG', get_option('easify_options_logging')['easify_logging_enabled']);
 }
 
 if (!defined('PLUGIN_ROOT_PATH')) {

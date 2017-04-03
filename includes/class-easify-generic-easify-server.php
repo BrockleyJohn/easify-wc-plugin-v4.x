@@ -1,14 +1,35 @@
 <?php
 
 /**
+ * Copyright (C) 2017  Easify Ltd (email:support@easify.co.uk)
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+/**
  * Provides generic access to the specified Easify Server
  * 
  * Construct this class with the URL of your Easify Server, along with the 
- * username and password of your Easify channel subscription.
+ * username and password of your Easify ECommerce subscription.
  * 
  * You can then call the methods within the class to retrieve data from your 
  * Easify Server.
  * 
+ * @class       Easify_Generic_Easify_Server
+ * @version     4.0
+ * @package     easify-woocommerce-connector
+ * @author      Easify 
  */
 class Easify_Generic_Easify_Server {
 
@@ -21,12 +42,11 @@ class Easify_Generic_Easify_Server {
         $this->username = $username;
         $this->password = $password;
     }
-    
-    public function UpdateServerUrl($server_url)
-    {
-        $this->server_url = $server_url;        
+
+    public function UpdateServerUrl($server_url) {
+        $this->server_url = $server_url;
     }
-    
+
     private function GetFromEasify($Entity, $Key) {
         if (empty($this->server_url))
             return;
@@ -55,7 +75,6 @@ class Easify_Generic_Easify_Server {
         $xpath = new DOMXpath($document);
 
         // register name spaces
-        //<entry xml:base="https://127.0.0.1:1234/" xmlns="http://www.w3.org/2005/Atom" xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
         $namespaces = array(
             'a' => 'http://www.w3.org/2005/Atom',
             'd' => 'http://schemas.microsoft.com/ado/2007/08/dataservices',
@@ -78,7 +97,12 @@ class Easify_Generic_Easify_Server {
         // HTTPS and BASIC Authentication
         // NB. required to allow self signed certificates
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYSTATUS, false);
+
+        if (version_compare(phpversion(), "7.0.7", ">=")) {
+            // CURLOPT_SSL_VERIFYSTATUS is PHP 7.0.7 feature
+            curl_setopt($ch, CURLOPT_SSL_VERIFYSTATUS, false);
+        }
+
         // do not verify https certificates
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         // if https is set, user basic authentication
@@ -418,11 +442,23 @@ class Easify_Generic_Easify_Server {
         }
 
         return $tax_rates;
-    }    
-    
-    
-    
-    
+    }
+
+    /**
+     * Determines the amount of stock for the specified SKU that has been 
+     * allocated to other orders.
+     * 
+     * @param string $sku
+     * @return string
+     */
+    public function get_allocation_count_by_easify_sku($sku) {
+        // Call a WebGet to get the allocated stock level...
+        $url = $this->server_url . '/Products_Allocated?SKU=' . $sku;
+        $xmlString = $this->GetFromWebService($url);               
+        $xml = simplexml_load_string($xmlString);                   
+        return (string)$xml[0];                            
+    }
+
 }
 
 class ProductDetails {

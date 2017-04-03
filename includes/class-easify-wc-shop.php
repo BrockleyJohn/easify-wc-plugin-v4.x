@@ -1,5 +1,21 @@
 <?php
 
+/**
+ * Copyright (C) 2017  Easify Ltd (email:support@easify.co.uk)
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
 include_once(dirname(__FILE__) . '/easify_functions.php');
 include_once(dirname(__FILE__) . '/class-easify-generic-shop.php');
 include_once(dirname(__FILE__) . '/class-easify-osc-server.php');
@@ -10,14 +26,6 @@ include_once(dirname(__FILE__) . '/class-easify-osc-server.php');
  * 
  * Implements abstract methods from the Easify_Generic_Shop superclass as 
  * required for use by the Easify_Generic_Web_Service class.
-
-  Specialisation for osC of generic classes created by Easify 
-	
-	based on woocommerce plugin specialisation by Easify
-
-  Author John Ferguson (@BrockleyJohn) john@sewebsites.net
-  
-	copyright  (c) 2017 SEwebsites
  */
 class Easify_osC_Shop extends Easify_Generic_Shop {
 
@@ -25,12 +33,6 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
 		/**
      * Public implementation of abstract methods in superclass
      */
-    
-    public function __construct($easify_server_url, $username, $password) {
-        // Create an Easify Server class so that the subclasses can communicate with the 
-        // Easify Server to retrieve product details etc....
-        $this->easify_server = new Easify_Osc_Easify_Server($easify_server_url, $username, $password);
-    }
     
     public function IsExistingProduct($SKU) {
         try {
@@ -45,21 +47,31 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     public function InsertProduct($EasifySku) {
 	  //jaf create both mapping table entry and skeleton oscom product entry - attached to appropriate category
         try {
+            Easify_Logging::Log('Easify_WC_Shop.InsertProduct()');
 
             // Get product from Easify Server
-            $this->Product = $this->easify_server->GetProductFromEasify($EasifySku);
+            $Product = $this->easify_server->GetProductFromEasify($EasifySku);
 
+            if (empty($this->Product))
+            {
+                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Could not get product from Easify Server. Sku:' . $EasifySku);
+            }
+            
             if ($this->Product->Published == 'false') {
-                Easify_Logging::Log('Not published, deleting trace of product and skipping insert');
+                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Not published, deleting product and not inserting.');
                 $this->DeleteProduct($EasifySku);
                 return;
             }
 
-            // calculate prices from retail margin and cost price
-						$DecimalPlaces = 4;
-						$this->ProductPrice = round(($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120), $DecimalPlaces);
-						$PriceExVAT = round((($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120)/1.2), $DecimalPlaces);
-				
+            if ($this->Product->Discontinued == 'true') {
+                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Discontinued, deleting product and not updating.');
+                $this->DeleteProduct($EasifySku);
+                return;
+            }
+
+            // calculate price from retail margin and cost price
+            $Price = round(($this->Product->CostPrice / (100 - $Product->RetailMargin) * 100), 4);
+
             // catch reserved delivery SKUs and update delivery prices
             if ($this->UpdateDeliveryPrice($this->Product->SKU, $this->ProductPrice))
                 return;
@@ -125,6 +137,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             update_post_meta($ProductId, '_purchase_note', '');
             update_post_meta($ProductId, '_featured', 'no');
             update_post_meta($ProductId, '_product_attributes', 'a:0:{}'); // no attributes
+            
             // get web info if available
             if ($Product->WebInfoPresent == 'true') {
                 // get the related product info (picture and html description)
@@ -134,7 +147,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 $this->UpdateProductInfoInDatabase($EasifySku, $ProductInfo['Image'], $ProductInfo['Description']);
             }
 
-            Easify_Logging::Log("..end insert..");
+            Easify_Logging::Log("Easify_WC_Shop.InsertProduct() - End");
         } catch (Exception $e) {
             Easify_Logging::Log("Easify_WC_Shop->InsertProductIntoDatabase Exception: " . $e->getMessage());
             throw $e;
@@ -143,27 +156,35 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
 
     public function UpdateProduct($EasifySku) {
         try {
-
+            Easify_Logging::Log('Easify_WC_Shop.UpdateProduct()');
             // get product
-            if (empty($this->easify_server)){
-             Easify_Logging::Log("Easify Server is NULL");               
+            if (empty($this->easify_server)) {
+                Easify_Logging::Log("Easify_WC_Shop.UpdateProduct() - Easify Server is NULL");
             }
 
-            
             $Product = $this->easify_server->GetProductFromEasify($EasifySku);
-
+            
             if ($Product->Published == 'false') {
-                Easify_Logging::Log('Not published, deleting trace of product and skipping update');
+                Easify_Logging::Log('Easify_WC_Shop.UpdateProduct() - Not published, deleting product and not updating.');
                 $this->DeleteProduct($EasifySku);
                 return;
             }
 
+             if ($Product->Discontinued == 'true') {
+                Easify_Logging::Log('Easify_WC_Shop.UpdateProduct() - Discontinued, deleting product and not updating.');
+                $this->DeleteProduct($EasifySku);
+                return;
+            }           
+            
             // calculate price from retail margin and cost price
             $Price = round(($Product->CostPrice / (100 - $Product->RetailMargin) * 100), 4);
 
             // catch reserved delivery SKUs and update delivery prices
             if ($this->UpdateDeliveryPrice($Product->SKU, $Price))
-                return;
+            {
+                Easify_Logging::Log("Easify_WC_Shop.UpdateProduct() - Product was delivery SKU, updated price and nothing more to do.");
+                 return;               
+            }
 
             // sanitise weight value
             $Product->Weight = (isset($Product->Weight) && is_numeric($Product->Weight) ? $Product->Weight : 0);
@@ -197,7 +218,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 'post_status' => 'publish',
                 'post_type' => 'product'
             );
-
+            
             // insert product record and get WooCommerce product id
             $ProductId = wp_update_post($ProductStub);
 
@@ -232,8 +253,11 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             update_post_meta($ProductId, '_sold_individually', '');
             update_post_meta($ProductId, '_manage_stock', 'yes');
             update_post_meta($ProductId, '_backorders', 'no');
-            update_post_meta($ProductId, '_stock', $Product->StockLevel);
-
+            
+            // This needs to be free stock level not on hand stock level (Stock level minus amount of stock allocated to other orders)...
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProduct() - Updating stock level.");                     
+            update_post_meta($ProductId, '_stock', $Product->StockLevel - $this->easify_server->get_allocation_count_by_easify_sku($Product->SKU));
+  
             // physical properties
             update_post_meta($ProductId, '_weight', $Product->Weight);
             update_post_meta($ProductId, '_length', '');
@@ -253,7 +277,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 $this->UpdateProductInfoInDatabase($EasifySku, $ProductInfo['Image'], $ProductInfo['Description']);
             }
 
-            Easify_Logging::Log("..end update..");
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProduct() - End.");
         } catch (Exception $e) {
             Easify_Logging::Log("Easify_WC_Shop->UpdateProductInDatabase Exception: " . $e->getMessage());
             throw $e;
@@ -261,25 +285,20 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     public function DeleteProduct($ProductSKU) {
-			//jaf - default - just flag the easify record as deleted and leave osc alone...
-		  if ((! defined('EASIFY_EDIT_MASTER')) || EASIFY_EDIT_MASTER == 'false') {
-				Easify_Logging::Log('Flag product with SKU '.$ProductSKU." as deleted\n");
-		
-				self::Query("UPDATE ".TABLE_EASIFY_PRODUCTS." SET
-					`easify_discontinued` = 1 
-					 WHERE `easify_sku` ='".self::Sanitise($ProductSKU)."'");
-			} else {
-			}
-		}
+        // get the WooCommerce product id by the Easify SKU
+        $ProductId = $this->GetWooCommerceProductIdFromEasifySKU($ProductSKU);
+        wp_delete_post($ProductId, true);
+    }
 
     public function UpdateProductInfo($EasifySku) {
         try {
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfo()");
 
             // get product from Easify Server
             $Product = $this->easify_server->GetProductFromEasify($EasifySku);
 
             if ($Product->Published == 'false') {
-                Easify_Logging::Log('Not published, deleting trace of product and skipping product info update');
+                Easify_Logging::Log('Easify_WC_Shop.UpdateProductInfo() - Not published, deleting product and not updating info.');
                 $this->DeleteProduct($EasifySku);
                 return;
             }
@@ -292,6 +311,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 // update product's web info
                 $this->UpdateProductInfoInDatabase($EasifySku, $ProductInfo['Image'], $ProductInfo['Description']);
             }
+
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfo() - End.");
         } catch (Exception $e) {
             Easify_Logging::Log("Easify_WC_Shop->UpdateProductInfo Exception: " . $e->getMessage());
             throw $e;
@@ -299,7 +320,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     public function UpdateTaxRate($EasifyTaxId) {
-        Easify_Logging::Log("UpdateTaxRate() - Start");
+        Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate()");
 
         $EasifyTax = $this->easify_server->GetEasifyTaxRates();
         $TaxCode = null;
@@ -315,14 +336,14 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             }
         }
 
-        Easify_Logging::Log("UpdateTaxRate() - TaxCode: " . $TaxCode . " - TaxRate: " . $TaxRate . " - TaxDescription: " . $TaxDescription);
+        Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate() - TaxCode: " . $TaxCode . " - TaxRate: " . $TaxRate . " - TaxDescription: " . $TaxDescription);
 
         global $wpdb;
         $TaxResult = $wpdb->get_row($wpdb->prepare(
                         "SELECT tax_rate_id, IFNULL(tax_rate_class, '') AS tax_rate_class, tax_rate_name, tax_rate FROM " . $wpdb->prefix . "woocommerce_tax_rates" . " WHERE tax_rate_name = '%s' LIMIT 1", $TaxDescription
         ));
 
-        Easify_Logging::Log("UpdateTaxRate() - TaxResult: " . print_r($TaxResult, true));
+        Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate() - TaxResult: " . print_r($TaxResult, true));
 
         if (!empty($TaxResult->tax_rate_id)) {
 
@@ -337,18 +358,19 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                     ), array('tax_rate_id' => $TaxResult->tax_rate_id)
             );
 
-            Easify_Logging::Log("UpdateTaxRate() - Updated existing tax rate");
+            Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate() - Updated existing tax rate");
         } else {
             // create a tax record in WooCommerce			
             $this->AddTaxRate($EasifyTax, $TaxCode, $TaxRate, $TaxDescription);
 
-            Easify_Logging::Log("UpdateTaxRate() - Added new tax rate");
+            Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate() - Added new tax rate");
         }
 
-        Easify_Logging::Log("UpdateTaxRate() - End");
+        Easify_Logging::Log("Easify_WC_Shop.UpdateTaxRate() - End");
     }
 
     public function DeleteTaxRate($EasifyTaxId) {
+        Easify_Logging::Log("Easify_WC_Shop.DeleteTaxRate()");
 
         $EasifyTax = $this->easify_server->GetEasifyTaxRates();
         $TaxCode = null;
@@ -400,56 +422,16 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 }
             }
         } else {
-            Easify_Logging::Log("DeleteTaxRate - Tax Rate doesn't exist");
+            Easify_Logging::Log("Easify_WC_Shop.DeleteTaxRate() - Tax Rate doesn't exist");
         }
+
+        Easify_Logging::Log("Easify_WC_Shop.DeleteTaxRate() - End");
     }
 
-    
-    
     /**
-     * Private methods specific to osCommerce shop
+     * Private methods specific to WooCommerce shop
      */    
-
-    private function GetOscCategory($CategoryId, $SubcategoryId) {
-
-						/* jaf - restructure and optimise:
-						  check if required Easify categories present in osC
-							if not, refresh Easify categories
-							get osC category id for insert
-						*/
-						
-						// check which catgory to use
-						if (EASIFY_USE_ONLY_FLAT_SUBCATEGORIES == 'true') {
-						  $OscCategoryId = $this->GetOscCategoryIdFromEasifyCategoryId($CategoryId);
-						} else {
-						  $OscCategoryId = $this->GetOscCategoryIdFromEasifyCategoryId($SubcategoryId);
-						}
-						
-						if ($OscCategoryId) return $OscCategoryId;
-						
-						// the Easify category isn't here so refresh them
-						$this->RefreshEasifyCategories();
-						// get Easify product categories
-            $EasifyCategories = $this->easify_server->GetEasifyProductCategories();
-
-            // get Easify category description by the Easify category id
-            $CategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifyCategories, $Product->CategoryId);
-
-            // get Easify product sub categories by Easify category id
-            $EasifySubCategories = $this->easify_server->GetEasifyProductSubCategoriesByCategory($Product->CategoryId);
-
-            // get Easify sub category description by Easify sub category id
-            $SubCategoryDescription = $this->easify_server->GetEasifyCategoryDescriptionFromEasifyCategoryId($EasifySubCategories, $Product->SubcategoryId);
-
-            //Easify_Logging::Log("..Subcategory: " . $SubCategoryDescription . "..");
-            // insert new category if needed and return WooCommerce category id
-            $CategoryId = $this->InsertCategoryIntoWooCommerce($CategoryDescription, $CategoryDescription);
-
-            // insert new sub category if needed and return WooCommerce sub category id
-            $SubCategoryId = $this->InsertSubCategoryIntoWooCommerce($SubCategoryDescription, $SubCategoryDescription, $CategoryId);
-
-    }
-		
+      
     private function GetWooCommerceProductIdFromEasifySKU($SKU) {
         // get WooCommerce product id from Easify SKU
         global $wpdb;
@@ -459,13 +441,13 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     private function GetWooCommerceTaxIdByEasifyTaxId($EasifyTaxId) {
-        Easify_Logging::Log("GetWooCommerceTaxIdByEasifyTaxId() - Start");
+        Easify_Logging::Log("Easify_WC_Shop.GetWooCommerceTaxIdByEasifyTaxId()");
 
         global $wpdb;
 
         // match Easify tax id with an equivalent WooCommerce tax id 
         // if not match, add Easify tax record to WooCommerce and return WooCommerce class name
-        
+
         $EasifyTax = $this->easify_server->GetEasifyTaxRates();
         $TaxCode = null;
         $TaxRate = null;
@@ -494,8 +476,9 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
         }
     }
 
-
     private function AddTaxRate($EasifyTax, $TaxCode, $TaxRate, $TaxDescription) {
+        Easify_Logging::Log("Easify_WC_Shop.AddTaxRate()");
+
         // Easify_Logging::Log("AddTaxRate() - Start");
         // default tax class is represented as a blank string in WooComm
         $TaxClass = '';
@@ -539,11 +522,15 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
                 )
         );
 
+        Easify_Logging::Log("Easify_WC_Shop.AddTaxRate() - End.");
+
         // return class name
         return $TaxCode;
     }
 
     private function InsertCategoryIntoWooCommerce($Name, $Description) {
+        Easify_Logging::Log("Easify_WC_Shop.InsertCategoryIntoWooCommerce()");
+
         $Term = term_exists($Name, 'product_cat');
 
         // if category doesn't exist, create it
@@ -557,6 +544,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     private function InsertSubCategoryIntoWooCommerce($Name, $Description, $ParentId) {
+        Easify_Logging::Log("Easify_WC_Shop.InsertSubCategoryIntoWooCommerce()");
+
         // NB. if two sub categories have the same slug, Term can return NULL even though the subcategory exists
         $Term = term_exists($Name, 'product_cat', $ParentId);
 
@@ -574,6 +563,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     private function UpdateDeliveryPrice($SKU, $Price) {
+        Easify_Logging::Log("Easify_WC_Shop.UpdateDeliveryPrice()");
+
         // get WooCommerce Easify options from WordPress database
         $EasifyOptionsShipping = get_option('easify_options_shipping');
 
@@ -620,6 +611,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
 
     private function UpdateProductInfoInDatabase($ProductSKU, $Picture, $HTMLDescription) {
         try {
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase()");
 
             // get WordPress current image upload path
             $arr = wp_upload_dir();
@@ -638,7 +630,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             fclose($fp);
 
             // get WooCommerce product id from Easify SKU
-            $ProductId = $this->GetWooCommProductIdFromEasifySKU($ProductSKU);
+            $ProductId = $this->GetWooCommerceProductIdFromEasifySKU($ProductSKU);
 
             // delete old picture, if one exists
             $this->DeleteProductAttachement($ProductId);
@@ -649,6 +641,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             // get WordPress current image upload URL
             $UploadFolder = $arr['url'] . '/';
 
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase() - Creating WordPress image stub");
+            
             // create a WooCommerce stub for product image / post attachment
             $Attachment = array(
                 'guid' => $UploadFolder . basename($FileName),
@@ -659,12 +653,14 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             );
 
             // insert product image and get WooCommerce attachment id
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase() - Inserting WordPress attachment.");
             $AttachmentId = wp_insert_attachment($Attachment, $FileName, $ProductId);
 
             // generate the meta data for the attachment, and update the database record.
             $AttachData = wp_generate_attachment_metadata($AttachmentId, $FileName);
 
             // insert product image meta data 
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase() - Updating WordPress attachment metadata.");
             wp_update_attachment_metadata($AttachmentId, $AttachData);
 
             // link product record and product image thumbnail
@@ -677,7 +673,10 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             );
 
             // update product record with html description
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase() - Updating product record with HTML description.");
             $ProductId = wp_update_post($ProductStub);
+            
+            Easify_Logging::Log("Easify_WC_Shop.UpdateProductInfoInDatabase() - End.");
         } catch (Exception $e) {
             Easify_Logging::Log("Easify_WC_Shop->UpdateProductInfoInDatabase Exception: " . $e->getMessage());
             throw $e;
@@ -685,7 +684,7 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     private function DeleteProductAttachement($ProductId) {
-        //TDOO: Dont know why this was commented out???
+        //TODO: Dont know why this was commented out???
         // delete post attachment
         // wp_delete_attachment($ProductId, true);
         // delete_post_thumbnail($ProductId);
@@ -693,6 +692,8 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
     }
 
     private function DeleteProductChildren($ProductId) {
+        Easify_Logging::Log("Easify_WC_Shop.DeleteProductChildren()");
+
         global $wpdb;
         $ids = $wpdb->get_results("SELECT post_id FROM " . $wpdb->posts . " WHERE post_parent = '" . $ProductId . "'");
 
