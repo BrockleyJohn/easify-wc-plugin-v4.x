@@ -21,7 +21,8 @@ require_once( ABSPATH . '/wp-admin/includes/image.php' );
 require_once( plugin_dir_path(__FILE__) . 'class-easify-wc-web-service.php' );
 require_once( plugin_dir_path(__FILE__) . 'class-easify-wc-shop.php' );
 require_once( plugin_dir_path(__FILE__) . 'class-easify-wc-send-order-to-easify.php' );
-    
+require_once( plugin_dir_path(__FILE__) . 'class-easify-generic-crypto.php' );
+
 /**
  * WooCommerce Easify Plugin Class
  * 
@@ -33,12 +34,13 @@ require_once( plugin_dir_path(__FILE__) . 'class-easify-wc-send-order-to-easify.
  *                  the product in WooCommerce.
  * 
  * @class       Easify_WC_Plugin
- * @version     4.0
+ * @version     4.2
  * @package     easify-woocommerce-connector
  * @author      Easify 
  */
 class Easify_WC_Plugin {
-
+    private $easify_crypto;
+           
     /**
      * __construct function.
      */
@@ -48,6 +50,8 @@ class Easify_WC_Plugin {
             return;
         }
 
+        $this->easify_crypto = new Easify_Generic_Crypto();
+        
         // Initialise hooks
         $this->initialise_hooks();
     }
@@ -74,7 +78,7 @@ class Easify_WC_Plugin {
      */
     public function send_to_easify($order_id) {
         // Easify_WC_Send_Order_To_Easify gathers all order data from WooCommerce, then sends it to Easify
-        $sender = new Easify_WC_Send_Order_To_Easify($order_id, get_option('easify_username'), Decrypt(get_option('easify_password')));
+        $sender = new Easify_WC_Send_Order_To_Easify($order_id, get_option('easify_username'), $this->easify_crypto->decrypt(get_option('easify_password')));
         $sender->process();
     }
 
@@ -84,15 +88,17 @@ class Easify_WC_Plugin {
      * handles incoming Easify requests 
      */
     public function receive_from_easify() {
-        // Easify_Logging::Log('Easify_WC_Plugin.receive_from_easify()');
+         Easify_Logging::Log('Easify_WC_Plugin.receive_from_easify() ' . $_SERVER["REQUEST_URI"]);
                 
         /* Any requests to /easify or /easify/ will be notifications coming from the Easify Server 
          * i.e. product update notifications. */
         if (!$_SERVER["REQUEST_URI"]) {
             return;
         }
-
-        if (strtolower($_SERVER["REQUEST_URI"]) != '/easify' && strtolower($_SERVER["REQUEST_URI"]) != '/easify/') {
+                        
+        // Make sure URI ends with /easify or /easify/
+        $request_uri = strtolower($_SERVER["REQUEST_URI"]);       
+        if ( (!(substr($request_uri, -strlen( '/easify' ) ) == '/easify') == true) && (!(substr($request_uri, -strlen( '/easify/' ) ) == '/easify/') == true) ) {
             // Request is not to /easify so return
             return;
         }
@@ -101,7 +107,7 @@ class Easify_WC_Plugin {
         Easify_Logging::Log('Easify_WC_Plugin.receive_from_easify() - Request to /Easify/ received, creating Easify web service.');
         
         // Create Easify Web Service...
-        $ews = new Easify_WC_Web_Service(get_option('easify_username'), Decrypt(get_option('easify_password')), null, get_option('easify_web_service_location'));
+        $ews = new Easify_WC_Web_Service(get_option('easify_username'), $this->easify_crypto->decrypt(get_option('easify_password')), null, get_option('easify_web_service_location'));
 
         // Process the request
         Easify_Logging::Log('Easify_WC_Plugin.receive_from_easify() - Processing incoming Easify Web Service request.');        
