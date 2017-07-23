@@ -1,0 +1,13 @@
+config options and such:
+
+categories - 
+= top one or not, 
+= flat or copy
+
+products - 
+= action on unpublish [ nothing / inactive / delete ]
+= action on discontinue [ nothing / inactive / delete ]
+= action on new & update : set of options to follow for fields
+-- use web info yes/no
+-- map if field to table/column
+-- action on new / match / [auto] / update

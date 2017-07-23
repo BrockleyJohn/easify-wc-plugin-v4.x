@@ -59,6 +59,17 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
         }
     }
 
+    public function IsExistingEasifyProduct($SKU) {
+        try {
+						// get number of OSCOM products that match the Easify SKU
+						$ProductResult = self::Query("SELECT COUNT(*) AS count FROM ".TABLE_EASIFY_PRODUCTS." WHERE easify_sku = '" . self::Sanitise($SKU) . "' ");
+						return ($ProductResult['count'] > 0 ? true : false);
+        } catch (Exception $e) {
+            Easify_Logging::Log("IsExistingEasifyProduct Exception: " . $e->getMessage() . "\n");
+			      return false;
+        }
+    }
+
     public function InsertProduct($EasifySku) {
 	  //jaf create both mapping table entry and skeleton oscom product entry - attached to appropriate category
         try {
@@ -67,112 +78,88 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
             // Get product from Easify Server
             $Product = $this->easify_server->GetProductFromEasify($EasifySku);
 
-            if (empty($this->Product))
+            if (empty($Product))
             {
                 Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Could not get product from Easify Server. Sku:' . $EasifySku);
             }
             
-            if ($this->Product->Published == 'false') {
-                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Not published, deleting product and not inserting.');
-                $this->DeleteProduct($EasifySku);
-                return;
-            }
-
-            if ($this->Product->Discontinued == 'true') {
-                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Discontinued, deleting product and not updating.');
-                $this->DeleteProduct($EasifySku);
-                return;
+            if ($Product->Published == 'false' || $Product->Discontinued == 'true') {
+                Easify_Logging::Log('Easify_WC_Shop.InsertProduct() - Not published or discontinued, acting according to options.');
+                if ($this->ProcessDeleteProduct($Product)) 
+								    return;
             }
 
             // calculate prices from retail margin and cost price
 						$DecimalPlaces = 4;
-						$ProductPrice = round(($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120), $DecimalPlaces);
-						$PriceExVAT = round((($this->Product->CostPrice / (100 - $this->Product->RetailMargin) * 120)/1.2), $DecimalPlaces);
+						$ProductPrice = round(($Product->CostPrice / (100 - $Product->RetailMargin) * 120), $DecimalPlaces);
+						$PriceExVAT = round((($Product->CostPrice / (100 - $Product->RetailMargin) * 120)/1.2), $DecimalPlaces);
                  
-
             // catch reserved delivery SKUs and update delivery prices
-            if ($this->UpdateDeliveryPrice($this->Product->SKU, $this->ProductPrice))
+            if ($this->UpdateDeliveryPrice($Product->SKU, $ProductPrice))
                 return;
 
             // sanitise weight value
-            $this->Product->Weight = (isset($this->Product->Weight) && is_numeric($this->Product->Weight) ? $this->Product->Weight : 0);
+            $Product->Weight = (isset($Product->Weight) && is_numeric($Product->Weight) ? $Product->Weight : 0);
 
             // jaf move out category handling to osc specific functions
 						
-						$OscCategoryId = $this->GetOscCategory($this->Product->CategoryId, $this->Product->SubcategoryId);
+						$OscCategoryId = $this->GetOscCategory($Product->CategoryId, $Product->SubcategoryId);
 						
-		        $ManufacturerId = $this->GetOscManufacturerId($this->Product->ManufacturerId); 
+		        $ManufacturerId = $this->GetOscManufacturerId($Product->ManufacturerId); 
 
-            // jaf to here
-						// create a WooCommerce stub for the new product
-            $ProductStub = array(
-                'post_title' => $Product->Description,
-                'post_content' => '',
-                'post_status' => 'publish',
-                'post_type' => 'product'
-            );
-
-            // insert product record and get WooCommerce product id
-            $ProductId = wp_insert_post($ProductStub);
-
-            // link subcategory to product
-            wp_set_post_terms($ProductId, array($SubCategoryId), "product_cat");
-
-            // get WooCommerce tax class from Easify tax id
-            $TaxClass = $this->GetWooCommerceTaxIdByEasifyTaxId($Product->TaxId);
-
-            /*
-              flesh out product record meta data
-             */
-
-            // pricing
-            update_post_meta($ProductId, '_sku', $Product->SKU);
-            update_post_meta($ProductId, '_price', $Price);
-            update_post_meta($ProductId, '_regular_price', $Price);
-            update_post_meta($ProductId, '_sale_price', $Price);
-            update_post_meta($ProductId, '_sale_price_dates_from	', '');
-            update_post_meta($ProductId, '_sale_price_dates_to', '');
-            update_post_meta($ProductId, '_tax_status', 'taxable');
-            update_post_meta($ProductId, '_tax_class', strtolower($TaxClass));
-
-            // handling stock
-            update_post_meta($ProductId, '_stock_status', 'instock');
-            update_post_meta($ProductId, '_manage_stock', 'yes');
-            update_post_meta($ProductId, '_downloadable', 'no');
-            update_post_meta($ProductId, '_virtual', 'no');
-            update_post_meta($ProductId, '_visibility', 'visible');
-            update_post_meta($ProductId, '_sold_individually', '');
-            update_post_meta($ProductId, '_manage_stock', 'yes');
-            update_post_meta($ProductId, '_backorders', 'no');
-            update_post_meta($ProductId, '_stock', $Product->StockLevel);
-
-            // physical properties
-            update_post_meta($ProductId, '_weight', $Product->Weight);
-            update_post_meta($ProductId, '_length', '');
-            update_post_meta($ProductId, '_width', '');
-            update_post_meta($ProductId, '_height', '');
-
-            // misc
-            update_post_meta($ProductId, '_purchase_note', '');
-            update_post_meta($ProductId, '_featured', 'no');
-            update_post_meta($ProductId, '_product_attributes', 'a:0:{}'); // no attributes
-            
+            //$TaxId = 1; // hard code taxable goods?
+            $TaxId = $this->GetOSCOMTaxIdByEasifyTaxId($Product->TaxId);
+						
+						// insert new oscom product record
+						$sql = "INSERT INTO ".TABLE_PRODUCTS." (products_quantity, easify_sku, products_model, products_image, products_price, products_date_added, products_date_available, products_weight, products_status, products_tax_class_id, manufacturers_id) VALUES (" . self::Sanitise($Product->StockLevel) . ", '" . self::Sanitise($Product->SKU) . "', '" . self::Sanitise($Product->SKU) . "', 'no-image.jpg', " . self::Sanitise($PriceExVAT) . ", now(), null, "  . self::Sanitise($Product->Weight) . ", 0, " . self::Sanitise($TaxId) . ", " . self::Sanitise($ManufacturerId). ")";
+						Easify_Logging::Log("Product SQL '".$sql."'");
+						self::Query($sql);
+						
+						// get oscom product id from Easify sku
+						if ($ProductId = $this->GetOSCOMProductIdFromEasifySKU($Product->SKU))
+				//		$ProductId = self::Query("SELECT LAST_INSERT_ID()");
+							Easify_Logging::Log("Inserted product id '$ProductId'");
+						else	{ Easify_Logging::Log("Failed to fetch id of new product"); exit("bleah!"); }
+						
             // get web info if available
             if ($Product->WebInfoPresent == 'true') {
                 // get the related product info (picture and html description)
-                $ProductInfo = $this->easify_server->GetProductWebInfo($EasifySku);
+                $ProductInfo = $this->easify_server->GetProductWebInfo($Product->SKU);
 
                 // update product's web info
-                $this->UpdateProductInfoInDatabase($EasifySku, $ProductInfo['Image'], $ProductInfo['Description']);
-            }
+								$Description = $ProductInfo['Description'];
+                $this->UpdateProductImage($Product->SKU, $ProductInfo['Image']);
+            } else {
+						    $Description = '';
+						}
 
+						// insert oscom product description
+						self::Query("INSERT INTO ".TABLE_PRODUCTS_DESCRIPTION." (products_id, language_id, products_name, products_description, products_viewed) VALUES (" . self::Sanitise($ProductId) . ", 1, '" . self::Sanitise($Product->Description) . "','" . $Description . "', 0)");
+						
+						// check if mapping table entry exists - if so link new product and update otherwise create
+						if ($this->IsExistingEasifyProduct($Product->SKU)) {
+						
+							self::Query("UPDATE ".TABLE_EASIFY_PRODUCTS." SET
+								`products_id` = '" . self::Sanitise($ProductId) ."'
+								 WHERE `easify_sku` ='".self::Sanitise($Product->SKU)."'");
+							$this->UpdateEasifyProduct($Product, $ProductPrice);
+						} else {
+							// insert mapping table entry
+							$this->InsertEasifyProduct($Product,$ProductId,$ProductPrice);
+						}
+
+						self::Query("INSERT INTO ".TABLE_PRODUCTS_TO_CATEGORIES." (products_id, categories_id) VALUES (" . (int)self::Sanitise($ProductId) . ", " . (int)self::Sanitise($OscCategoryId) . ")");
+		
+						// jaf to here
+						
             Easify_Logging::Log("Easify_WC_Shop.InsertProduct() - End");
+
         } catch (Exception $e) {
             Easify_Logging::Log("Easify_WC_Shop->InsertProductIntoDatabase Exception: " . $e->getMessage());
             throw $e;
         }
     }
-
+		
     public function UpdateProduct($EasifySku) {
         try {
             Easify_Logging::Log('Easify_WC_Shop.UpdateProduct()');
@@ -451,7 +438,168 @@ class Easify_osC_Shop extends Easify_Generic_Shop {
      * Private methods specific to WooCommerce shop
      */    
       
-    private function GetWooCommerceProductIdFromEasifySKU($SKU) {
+    private function InsertEasifyProduct($Product,$ProductId,$ProductPrice,$StockSpecial = 0)
+		{
+			Easify_Logging::Log("InsertEasifyProduct sku: " . $Product->SKU.' Product id \''.$ProductId ."'\n");
+/*ob_start();
+var_dump($Product);
+$result = ob_get_clean();
+			Easify_Logging::Log($result."'\n");*/
+			self::Query("INSERT INTO ".TABLE_EASIFY_PRODUCTS." (
+				`easify_sku`,
+				`easify_our_stock_code`,
+				`easify_manufacturer_stock_code`,
+				`easify_supplier_stock_code`,
+				`easify_ean_code`,
+				`easify_description`,
+				`easify_category_id`,
+				`easify_subcategory_id`,
+				`easify_manufacturer_id`,
+				`easify_cost_price`,
+				`easify_notes`,
+				`easify_stock_level`,
+				`easify_min_stock_level`,
+				`easify_reorder_amount`,
+				`easify_reorderwhenlow`,
+				`easify_stock_last_updated`,
+				`easify_price_last_updated`,
+				`easify_supplier_id`,
+				`easify_retail_margin`,
+				`easify_trade_margin`,
+				`easify_tax_id`,
+				`easify_published`,
+				`easify_allocatable`,
+				`easify_picture`,
+				`easify_html`,
+				`easify_weight`,
+				`easify_date_added`,
+			  `easify_current_price`,
+			  `easify_last_modified`,
+			  `easify_stock_special`,
+				`products_id`) VALUES (
+				'" . self::Sanitise($Product->SKU)."',
+				'" . self::Sanitise($Product->OurStockCode)."',
+				'" . self::Sanitise($Product->ManufacturerStockCode)."',
+				'" . self::Sanitise($Product->SupplierStockCode)."',
+				'" . self::Sanitise($Product->EANCode)."',
+				'" . self::Sanitise($Product->Description)."',
+				'" . self::Sanitise($Product->CategoryId)."',
+				'" . self::Sanitise($Product->SubcategoryId)."',
+				'" . self::Sanitise($Product->ManufacturerId)."',
+				'" . self::Sanitise($Product->CostPrice)."',
+				'" . self::Sanitise($Product->Notes)."',
+				'" . self::Sanitise($Product->StockLevel)."',
+				'" . self::Sanitise($Product->MinimumStockLevel)."',
+				'" . self::Sanitise($Product->ReorderAmount)."',
+				'" . ($Product->ReorderWhenLow ? 1 : 0)."',
+				'" . self::Sanitise($Product->DateStockLevelLastUpdated)."',
+				'" . self::Sanitise($Product->DatePriceLastChanged)."',
+				'" . self::Sanitise($Product->SupplierId)."',
+				'" . self::Sanitise($Product->RetailMargin)."',
+				'" . self::Sanitise($Product->TradeMargin)."',
+				'" . self::Sanitise($Product->TaxId)."',
+				'" . $Product->Published."',
+				'" . ($Product->Allocatable ? 1: 0 )."',
+				'" . self::Sanitise($Product->Picture)."',
+				'" . self::Sanitise($Product->HTMLDescription)."',
+				'" . self::Sanitise($Product->Weight)."',
+				'" . self::Sanitise($Product->DateAdded)."',
+				'" . self::Sanitise($ProductPrice)."',
+				now(),
+				'" . self::Sanitise($StockSpecial)."',
+				" . ( isset($ProductId) && $ProductId > 0 ? self::Sanitise($ProductId) : '0') .")");
+		}
+		
+    private function UpdateEasifyProduct($Product, $ProductPrice)
+		{
+		  // get the previous version of the mapping table entry
+			$ProductResult = self::Query("SELECT * FROM ".TABLE_EASIFY_PRODUCTS." WHERE easify_sku = '" . self::Sanitise($Product->SKU) . "' LIMIT 0,1");
+			if (empty($ProductResult)) throw new Exception('Existing Easify sku "'.$Product->SKU.'" not found in easify products');
+			
+			//if the price has changed, set the review flag and store the change of price
+			//unless the review flag is already set, in which case don't overwrite the old price previously stored
+
+			if ($ProductResult['easify_review_price']=='1') {
+				$previous_price = (!empty($ProductResult['easify_old_price']) ? $ProductResult['easify_old_price'] : $ProductResult['easify_current_price']);
+				$review_price = 1;
+			} elseif ($ProductPrice <> $ProductResult['easify_current_price']) {
+				$previous_price = (!empty($ProductResult['easify_current_price']) ? $ProductResult['easify_current_price'] : '');
+				$review_price = 1;
+			} else {
+				$previous_price = '';
+				$review_price = 0;
+			}
+			
+			//if the special stock handling flag is set, check if there's a rule set up and if so use it, otherwise set the review flag
+			$review_stock = 1;
+			$product_qty = $Product->StockLevel;
+			if ($ProductResult['easify_stock_special']=='1') {
+				if (!empty($ProductResult['easify_stock_rule_id'])) {
+					$rule = self::Query("SELECT * FROM ".TABLE_EASIFY_STOCK_RULES." WHERE easify_stock_rule_id = '" . self::Sanitise($ProductResult['easify_stock_rule_id']) . "' LIMIT 0,1");
+					switch ($rule['easify_stock_rule_code']) {
+						case 'PACK' :
+							$product_qty = floor($Product->StockLevel / $ProductResult['easify_stock_rule_param']);
+							$review_stock = 0;
+							break;
+					}
+				}
+			} else {
+				$review_stock = 0;
+			}
+			
+			self::Query("UPDATE ".TABLE_EASIFY_PRODUCTS." SET
+				`easify_our_stock_code` ='" . self::Sanitise($Product->OurStockCode)."',
+				`easify_manufacturer_stock_code` = '" . self::Sanitise($Product->ManufacturerStockCode)."',
+				`easify_supplier_stock_code` = '" . self::Sanitise($Product->SupplierStockCode)."',
+				`easify_ean_code` = '" . self::Sanitise($Product->EANCode)."',
+				`easify_description` = '" . self::Sanitise($Product->Description)."',
+				`easify_category_id` = '" . self::Sanitise($Product->CategoryId)."',
+				`easify_subcategory_id` = '" . self::Sanitise($Product->SubcategoryId)."',
+				`easify_manufacturer_id` = '" . self::Sanitise($Product->ManufacturerId)."',
+				`easify_cost_price` = '" . self::Sanitise($Product->CostPrice)."',
+				`easify_notes` = '" . self::Sanitise($Product->Notes)."',
+				`easify_stock_level` = '" . self::Sanitise($Product->StockLevel)."',
+				`easify_discontinued` = '" . (strlen($Product->Discontinued)>0 ? self::Sanitise($Product->Discontinued) : 0 )."',
+				`easify_min_stock_level` = '" . self::Sanitise($Product->MinimumStockLevel)."',
+				`easify_reorder_amount` = '" . self::Sanitise($Product->ReorderAmount)."',
+				`easify_reorderwhenlow` = '" . self::Sanitise($Product->ReorderWhenLow)."',
+				`easify_stock_last_updated` = '" . self::Sanitise($Product->DateStockLevelLastUpdated)."',
+				`easify_price_last_updated` = '" . self::Sanitise($Product->DatePriceLastChanged)."',
+				`easify_supplier_id` = '" . self::Sanitise($Product->SupplierId)."',
+				`easify_retail_margin` = '" . self::Sanitise($Product->RetailMargin)."',
+				`easify_trade_margin` = '" . self::Sanitise($Product->TradeMargin)."',
+				`easify_tax_id` = '" . self::Sanitise($Product->TaxId)."',
+				`easify_published` = '" . self::Sanitise($Product->Published)."',
+				`easify_allocatable` = '" . self::Sanitise($Product->Allocatable)."',
+				`easify_picture` = '" . self::Sanitise($Product->Picture)."',
+				`easify_html` = '" . self::Sanitise($Product->HTMLDescription)."',
+				`easify_weight` = '" . self::Sanitise($Product->Weight)."',
+				`easify_date_added` = '" . self::Sanitise($Product->DateAdded)."',
+			  `easify_last_modified` = now(),
+			  	`easify_discontinued` = 0,
+			  `easify_current_price` = '" . self::Sanitise($ProductPrice)."',
+			  `easify_updated` = '1',
+			  `easify_old_price` = '" . $previous_price."',
+			  `easify_review_price` = '" . $review_price ."',
+			  `easify_review_stock` = '" . $review_stock ."'
+				 WHERE `easify_sku` ='".self::Sanitise($Product->SKU)."'");
+		/*
+			~ Mapping between Easify products and OSCOM database tables ~
+			
+			Product.SKU:  products.easify_sku
+			Product.Description:  products_description.products_name
+			Product.SubcategoryId:  products_to_categories.categories_id
+			Product.CostPrice + Product.RetailMargin:  products.products_price
+			Product.StockLevel:  products.products_quantity
+			Product.DateStockLevelLastUpdated:  products.products_last_modified
+			Product.TaxId:  products.products_tax_class_id
+			Product.Picture:  products.products_image
+			Product.HTMLDescription:  products_description.products_description
+		*/
+		  return array ('product_qty' => $product_qty, 'review_stock' => $review_stock );
+		}
+
+		private function GetWooCommerceProductIdFromEasifySKU($SKU) {
         // get WooCommerce product id from Easify SKU
         global $wpdb;
         return $wpdb->get_var($wpdb->prepare(
