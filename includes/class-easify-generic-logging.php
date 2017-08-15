@@ -1,5 +1,7 @@
 <?php
 /**
+ * from Easify woocommerce connector class-easify-generic-logging.php
+ * 
  * Copyright (C) 2017  Easify Ltd (email:support@easify.co.uk)
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

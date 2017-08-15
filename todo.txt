@@ -11,3 +11,7 @@ products -
 -- use web info yes/no
 -- map if field to table/column
 -- action on new / match / [auto] / update
+
+
+things to check into
+const ERROR_EASIFY_SHIPPING_SKU_NOT_FOUND = -1;

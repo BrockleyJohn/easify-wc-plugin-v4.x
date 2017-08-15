@@ -25,13 +25,13 @@ class easify_osc_configuration
 		$done = false;
 		if (!defined('EASIFY_PRODUCT_MODE')) {
 		  $this->install();
-		  $done = true;
+		  $done = DEFAULT_SETTINGS_INSTALLED;
 		} else {
 		  $configs = array_keys($this->getConfigs());
 			foreach ($configs as $config) {
 			  if (! defined($config)) {
 				  $this->install($config);
-				  $done = true;
+				  $done = EXTRA_DEFAULTS_INSTALLED;
 				}
 			}
 		}
@@ -99,6 +99,28 @@ class easify_osc_configuration
 						 'set_func' => 'tep_cfg_select_option(array(\'True\', \'False\'), '),
 */	
     return array(
+		  'EASIFY_SERVICE_USERNAME' => array(
+						 'title' => 'Easify web service user name',
+						 'desc' => 'The user name for the Easify v4 eCommerce connector subscription (not the user for logging in to Easify or their web site)',
+						 'value' => '',
+						 'use_func' => 'sew_cfg_easify_service_settings', 
+						 'set_func' => 'sew_cfg_do_nothing('), 
+		  'EASIFY_SERVICE_PASSWORD' => array(
+						 'title' => 'Easify web service password',
+						 'desc' => 'The password for the Easify v4 eCommerce connector subscription',
+						 'value' => '',
+						 'use_func' => 'sew_cfg_do_nothing', 
+						 'set_func' => 'sew_cfg_do_nothing('), 
+		  'EASIFY_SERVICE_LOCATION' => array(
+						 'title' => 'Easify web service location',
+						 'desc' => 'The location of the eCommerce web service (stored automatically)',
+						 'value' => '',
+						 'use_func' => 'sew_cfg_do_nothing', 
+						 'set_func' => 'sew_cfg_do_nothing('), 
+		  'EASIFY_COUPON_DISCOUNT_SKU' => array(
+						 'title' => 'Coupon Discount on Easify',
+						 'desc' => 'SKU for Easify product used for coupon discount.',
+						 'value' => ''),
 		  'EASIFY_GENERIC_PRODUCT_SKUS' => array(
 						 'title' => 'Easify Generic Products',
 						 'desc' => 'Easify products that may map to multiple online products (Used, Surplus etc). Online product name gets put in the comment field. Format is sku1|sku2|sku3',
@@ -155,6 +177,12 @@ class easify_osc_configuration
 						 'title' => 'Easify action log \'no action\' entry limit',
 						 'desc' => 'The number of ''no action'' entries that will be kept when the action log is tidied (so you can tell if it runs when you think it should). Entries over this limit are deleted.',
 						 'value' => '10'),
+		  'EASIFY_LOGGING_DIR' => array(
+						 'title' => 'Easify logging directory',
+						 'desc' => 'Output log files to this directory if enabled.',
+						 'value' => DIR_FS_ADMIN . 'logs',
+						 'use_func' => 'sew_cfg_check_output_dir', 
+						 'set_func' => 'sew_cfg_choose_output_dir('),
 		  'EASIFY_LOGGING_ENABLED' => array(
 						 'title' => 'Easify logging enabled',
 						 'desc' => 'Enable logging to easify_log.txt',
@@ -195,6 +223,26 @@ class easify_osc_configuration
 						 'value' => '3',
 						 'use_func' => 'sew_cfg_get_ez_customer_type_name', //was tep_cfg_get_customer_type_name
 						 'set_func' => 'sew_cfg_pull_down_ez_customer_type_list('), //was tep_cfg_pull_down_customer_type_list
+		  'EASIFY_TIMEOUT' => array(
+						 'title' => 'Easify timeout',
+						 'desc' => 'Easify timeout',
+						 'value' => '600'),
+		  'EASIFY_TIMEOUT_SHORT' => array(
+						 'title' => 'Easify timeout short',
+						 'desc' => 'Easify timeout short',
+						 'value' => '25'),
+		  'EASIFY_DISCOVERY_SERVER_ENDPOINT_URI' => array(
+						 'title' => 'Easify discovery server endpoint',
+						 'desc' => 'Easify discovery server endpoint',
+						 'value' => 'https://www.easify.co.uk/api/Security/GetEasifyServerEndpoint'),
+		  'EASIFY_CLOUD_API_URI' => array(
+						 'title' => 'Easify cloud api',
+						 'desc' => 'Easify cloud api',
+						 'value' => 'https://cloudapi.easify.co.uk/api/EasifyCloudApi'),
+		  'EASIFY_HELP_BASE_URL' => array(
+						 'title' => 'Easify help',
+						 'desc' => 'Base url of Easify help',
+						 'value' => 'https://www.easify.co.uk'),
 		);
 	}
 }
