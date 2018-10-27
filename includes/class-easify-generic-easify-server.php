@@ -132,6 +132,9 @@ class Easify_Generic_Easify_Server {
 
         if ($info['http_code'] != '200') {
             Easify_Logging::Log('Could not communicate with Easify Server -  http response code: ' . $info['http_code']);
+            if ($info['http_code'] == '0') {
+				Easify_Logging::Log('URL '.$Url);
+			}
             throw new Exception('Could not communicate with Easify Server -  http response code: ' . $info['http_code']);
         }
 
@@ -160,12 +163,13 @@ class Easify_Generic_Easify_Server {
     private function GetFromEasifyServer($url) {
         Easify_Logging::Log("Easify_Generic_Easify_Server.GetFromEasifyServer()");
 
-        // initialise PHP CURL for HTTP GET action
-        $ch = curl_init();
+        $this->curlopts = [];
+		// initialise PHP CURL for HTTP GET action
+        $this->ch = curl_init();
 
         // Specify JSON to an Easify Server and it will return JSON instead of 
         // XML.
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        $this->curlsetopt(CURLOPT_HTTPHEADER, array(
             'Content-Type: application/json',
             'Accept: application/json'
         ));
@@ -173,7 +177,7 @@ class Easify_Generic_Easify_Server {
         // setting up coms to an Easify Server 
         // HTTPS and BASIC Authentication
         // NB. required to allow self signed certificates
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $this->curlsetopt(CURLOPT_SSL_VERIFYPEER, false);
 
         if (version_compare(phpversion(), "7.0.7", ">=")) {
             // CURLOPT_SSL_VERIFYSTATUS is PHP 7.0.7 feature
@@ -182,21 +186,51 @@ class Easify_Generic_Easify_Server {
         }
 
         // do not verify https certificates
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $this->curlsetopt(CURLOPT_SSL_VERIFYHOST, false);
         // if https is set, user basic authentication
-        curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-        curl_setopt($ch, CURLOPT_USERPWD, "$this->username:$this->password");
+        $this->curlsetopt(CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+        $this->curlsetopt(CURLOPT_USERPWD, "$this->username:$this->password");
 
         // server URL 
-        curl_setopt($ch, CURLOPT_URL, $url);
+        $this->curlsetopt(CURLOPT_URL, $url);
         // return result or GET action
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $this->curlsetopt(CURLOPT_RETURNTRANSFER, 1);
         // set timeout
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, EASIFY_TIMEOUT);
+        $this->curlsetopt(CURLOPT_CONNECTTIMEOUT, EASIFY_TIMEOUT);
+
+        $database_debug_flag = false;        
+        if (defined('EASIFY_LOGGING_BY_DB_FLAG')) {
+            $database_debug_flag = EASIFY_LOGGING_BY_DB_FLAG;
+        }
+
+	if ($database_debug_flag || EASIFY_LOGGING) {
+		
+		$this->curlsetopt(CURLOPT_HEADER, 0);
+	//	$this->curlsetopt(CURLINFO_HEADER_OUT, true);
+		// CURLOPT_VERBOSE: TRUE to output verbose information. Writes output to STDERR, 
+		// or the file specified using CURLOPT_STDERR.
+		$this->curlsetopt(CURLOPT_VERBOSE, true);
+		
+		$verbose = fopen(dirname(dirname(__FILE__)) . '/logs/verbose.txt', 'w+');
+		curl_setopt($this->ch, CURLOPT_STDERR, $verbose);
+
+	}
 
         // send GET request to server, capture result
-        $result = curl_exec($ch);
-        $info = curl_getinfo($ch);
+        $result = curl_exec($this->ch);
+        $info = curl_getinfo($this->ch);
+
+if ($database_debug_flag || EASIFY_LOGGING) rewind($verbose);
+
+if ($result === FALSE && ($database_debug_flag || EASIFY_LOGGING)) {
+    Easify_Logging::Log(sprintf("cUrl error (#%d): %s\n", curl_errno($this->ch),
+           curl_error($this->ch)));
+	$verboseLog = stream_get_contents($verbose);
+	Easify_Logging::Log("Verbose information:\n$verboseLog\n"); 
+//	Easify_Logging::Log("Header:\n".curl_getinfo ( $this->ch, CURLINFO_HEADER_OUT)."\n");
+	Easify_Logging::Log("Options:\n".$this->curlgetopts()."\n");
+	Easify_Logging::Log("Info:\n".print_r($info,true)."\n");
+}
 
         if ($info['http_code'] != '200') {
             Easify_Logging::Log('Could not communicate with Easify Server -  http response code: ' . $info['http_code']);
@@ -204,16 +238,25 @@ class Easify_Generic_Easify_Server {
         }
 
         // record any errors
-        if (curl_error($ch)) {
-            $result = 'error:' . curl_error($ch);
+        if (curl_error($this->ch)) {
+            $result = 'error:' . curl_error($this->ch);
             Easify_Logging::Log($result);
             throw new Exception($result);
         }
 
-        curl_close($ch);
+        curl_close($this->ch);
 
         return $result;
     }
+	
+	private function curlsetopt($opt, $value) {
+        $this->curlopts[$opt] = $value;
+		curl_setopt($this->ch, $opt, $value);
+	}
+	
+	private function curlgetopts() {
+		return print_r($this->curlopts,true);
+	}
 
     private function GetJsonFromEasifyServer($entity, $key) {
         Easify_Logging::Log("Easify_Generic_Easify_Server.GetJsonFromEasifyServer() - Entity: " . $entity . " Key: " . $key);
