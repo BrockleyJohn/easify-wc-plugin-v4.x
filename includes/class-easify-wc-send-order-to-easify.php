@@ -295,6 +295,7 @@ class Easify_WC_Send_Order_To_Easify {
 
 			$variation_id = $woocommerce_product['variation_id'];
 			Easify_Logging::Log( 'Easify_WC_Send_Order_To_Easify.do_order_details() $variation_id: ' . $variation_id );
+			Easify_Logging::Log( 'Easify_WC_Send_Order_To_Easify.do_order_details() $woocommerce_product: ' . print_r($woocommerce_product, true) );
 
 			$easify_order_detail->Sku = $this->get_easify_sku_by_woocommerce_product_id( $woocommerce_product['product_id'], $variation_id );
 
@@ -307,6 +308,7 @@ class Easify_WC_Send_Order_To_Easify {
 			 * and lookup appropriate Easify tax id and rate to use. E.g. if GB country code for tax class the
 			 * just use usual tax rate. Else if other country code or * then lookup relevant tax code.
 			 */
+			Easify_Logging::Log( 'Easify_WC_Send_Order_To_Easify.do_order_details() $woocommerce_product[\'tax_class\']: "' . $woocommerce_product['tax_class'] . '" ' );
 			$easify_order_detail->TaxId             = $this->easify_options->get_easify_tax_id_by_code( $woocommerce_product['tax_class'] );
 			$easify_order_detail->TaxRate           = $this->easify_options->get_easify_tax_rate_by_code( $woocommerce_product['tax_class'] );
 			$easify_order_detail->Spare             = '';

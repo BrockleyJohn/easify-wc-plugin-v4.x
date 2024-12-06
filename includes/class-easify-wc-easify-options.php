@@ -215,10 +215,12 @@ class Easify_WC_Easify_Options {
         // Iterate easify tax rates and return the one that is the default
         for ($i = 0; $i < sizeof($easify_tax_rates) - 1; $i++) {
             if (strtolower($easify_tax_rates[$i]['IsDefaultTaxCode']) == 'true') {
+                Easify_Logging::Log( 'get_easify_default_tax_id found default tax id from easify : ' . $easify_tax_rates[$i]['Code'] . ' ' . $easify_tax_rates[$i]['TaxDescription'] . ' id ' . $easify_tax_rates[$i]['TaxId']);
                 return $easify_tax_rates[$i]['TaxId'];
             }
         }
 
+        Easify_Logging::Log( 'get_easify_default_tax_id no default found use setting : ' . DEFAULT_EASIFY_TAX_ID);
         // If no default found, presume 2, Easify's default tax id for standard rate
         return DEFAULT_EASIFY_TAX_ID;
     }
@@ -234,10 +236,12 @@ class Easify_WC_Easify_Options {
         // Iterate easify tax rates and return the one that is the default
         for ($i = 0; $i < sizeof($easify_tax_rates) - 1; $i++) {
             if (strtolower($easify_tax_rates[$i]['IsDefaultTaxCode']) == 'true') {
+                Easify_Logging::Log( 'get_easify_default_tax_rate found default tax rate from easify : ' . $easify_tax_rates[$i]['Code'] . ' ' . $easify_tax_rates[$i]['TaxDescription'] . ' id ' . $easify_tax_rates[$i]['Rate']);
                 return $easify_tax_rates[$i]['Rate'];
             }
         }
 
+        Easify_Logging::Log( 'get_easify_default_tax_id no default found use setting : ' . DEFAULT_EASIFY_TAX_RATE);
         // If no default found, presume 20% standard rate
         return DEFAULT_EASIFY_TAX_RATE;
     }
@@ -255,6 +259,7 @@ class Easify_WC_Easify_Options {
 
             for ($i = 0; $i <= sizeof($easify_tax_rates) - 1; $i++) {
                 if (strtolower(trim($easify_tax_rates[$i]['Code'])) == strtolower(trim($code))) {
+                    Easify_Logging::Log( 'get_easify_tax_id_by_code tax rate match using easify : ' . $easify_tax_rates[$i]['Code'] . ' ' . $easify_tax_rates[$i]['TaxDescription'] . ' aginst ' . $code);
                     return $easify_tax_rates[$i]['TaxId'];
                 }
             }
@@ -277,6 +282,7 @@ class Easify_WC_Easify_Options {
 
             for ($i = 0; $i <= sizeof($easify_tax_rates) - 1; $i++) {
                 if (strtolower(trim($easify_tax_rates[$i]['Code'])) == strtolower(trim($code))) {
+                    Easify_Logging::Log( 'get_easify_tax_rate_by_code tax rate match using easify : ' . $easify_tax_rates[$i]['Code'] . ' ' . $easify_tax_rates[$i]['TaxDescription'] . ' aginst ' . $code);
                     return $easify_tax_rates[$i]['Rate'];
                 }
             }
